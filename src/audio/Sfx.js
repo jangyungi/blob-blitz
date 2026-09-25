@@ -159,6 +159,40 @@ export class Sfx {
     [0, 4, 7, 12, 16].forEach((n, i) => this.tone({ freq: 392 * Math.pow(2, n / 12), type: 'square', dur: 0.14, vol: 0.09, delay: i * 0.07 }));
   }
 
+  /** Small blip per chain-step time bonus; pitch climbs with the amount. */
+  chainTime(seconds) {
+    this.tone({ freq: 1200 + seconds * 400, type: 'square', dur: 0.05, vol: 0.06 });
+  }
+
+  gauge() {
+    [0, 5, 9, 12].forEach((n, i) => this.tone({ freq: 784 * Math.pow(2, n / 12), type: 'square', dur: 0.08, vol: 0.08, delay: i * 0.045 }));
+  }
+
+  menace() {
+    this.tone({ freq: 70, to: 45, type: 'sawtooth', dur: 0.9, vol: 0.18 });
+    this.noise({ dur: 0.8, vol: 0.2, freq: 300, to: 120 });
+  }
+
+  ko() {
+    this.noise({ dur: 0.7, vol: 0.8, freq: 2400, to: 60 });
+    this.tone({ freq: 160, to: 30, type: 'square', dur: 0.7, vol: 0.35 });
+    [0, -3, -7, -12].forEach((n, i) => this.tone({ freq: 392 * Math.pow(2, n / 12), type: 'triangle', dur: 0.28, vol: 0.12, delay: 0.5 + i * 0.22 }));
+  }
+
+  smoke() {
+    this.noise({ dur: 0.5, vol: 0.45, freq: 500, to: 3000, type: 'bandpass', q: 0.8 });
+    for (let i = 0; i < 8; i++) this.tone({ freq: 300 + (i % 2) * 80, type: 'square', dur: 0.03, vol: 0.05, delay: 0.3 + i * 0.09 });
+  }
+
+  escaped() {
+    [0, 4, 7, 12].forEach((n, i) => this.tone({ freq: 659 * Math.pow(2, n / 12), type: 'square', dur: 0.1, vol: 0.08, delay: i * 0.06 }));
+  }
+
+  confused() {
+    this.tone({ freq: 220, to: 330, type: 'triangle', dur: 0.2, vol: 0.12 });
+    this.tone({ freq: 330, to: 262, type: 'triangle', dur: 0.25, vol: 0.12, delay: 0.22 });
+  }
+
   results(best) {
     const notes = best ? [0, 4, 7, 12, 16, 19, 24] : [0, 4, 7, 12];
     notes.forEach((n, i) => this.tone({ freq: 523 * Math.pow(2, n / 12), type: 'triangle', dur: 0.22, vol: 0.14, delay: i * 0.08 }));

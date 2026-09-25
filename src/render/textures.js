@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const cache = new Map();
 
-function canvasTexture(key, w, h, draw) {
+function canvasTexture(key, w, h, draw, { pixel = false } = {}) {
   if (cache.has(key)) return cache.get(key);
   const c = document.createElement('canvas');
   c.width = w;
@@ -10,10 +10,65 @@ function canvasTexture(key, w, h, draw) {
   draw(c.getContext('2d'), w, h);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  if (pixel) {
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+  }
   cache.set(key, tex);
   return tex;
 }
+
+/** Writes an RGBA pixel grid through a callback: fn(x, y) -> [r,g,b,a] | null. */
+function paint(ctx, w, h, fn) {
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const c = fn(x, y);
+      if (!c) continue;
+      const i = (y * w + x) * 4;
+      img.data[i] = c[0];
+      img.data[i + 1] = c[1];
+      img.data[i + 2] = c[2];
+      img.data[i + 3] = c[3] ?? 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+// prettier-ignore
+const BADGE_ART = {
+  mult: [
+    '....####....',
+    '..##ffff##..',
+    '.#ffffffff#.',
+    '.#fXffffXf#.',
+    '#fffXffXfff#',
+    '#ffffXXffff#',
+    '#ffffXXffff#',
+    '#fffXffXfff#',
+    '.#fXffffXf#.',
+    '.#ffffffff#.',
+    '..##ffff##..',
+    '....####....',
+  ],
+  time: [
+    '....####....',
+    '..##ffff##..',
+    '.#ffffXfff#.',
+    '.#ffffXfff#.',
+    '#fffffXffff#',
+    '#fffffXffff#',
+    '#fffffXXXff#',
+    '#ffffffffff#',
+    '.#ffffffff#.',
+    '.#ffffffff#.',
+    '..##ffff##..',
+    '....####....',
+  ],
+};
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -26,20 +81,71 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 export const Tex = {
+  /**
+   * Cel-shaded sphere for MeshMatcapMaterial: 4 flat tones, a hard white highlight and a dark
+   * outline ring. One texture lookup per pixel, no lights – the cheapest "glossy blob" there is.
+   */
+  matcap(hex) {
+    return canvasTexture(
+      `matcap:${hex}`,
+      64,
+      64,
+      (ctx, s) => {
+        const base = new THREE.Color(hex);
+        const L = new THREE.Vector3(-0.45, 0.6, 0.66).normalize();
+        const tones = [0.42, 0.62, 0.82, 1.0];
+        paint(ctx, s, s, (x, y) => {
+          const nx = ((x + 0.5) / s) * 2 - 1;
+          const ny = 1 - ((y + 0.5) / s) * 2;
+          const r2 = nx * nx + ny * ny;
+          if (r2 > 1) return [0, 0, 0, 255];
+          const nz = Math.sqrt(1 - r2);
+          if (nz < 0.3) return [base.r * 60, base.g * 60, base.b * 60]; // outline
+          const d = Math.max(0, nx * L.x + ny * L.y + nz * L.z);
+          const shade = tones[Math.min(3, Math.floor((0.25 + 0.75 * d) * 4))];
+          const spec = Math.pow(Math.max(0, d), 24);
+          if (spec > 0.55) return [255, 255, 255];
+          const k = shade * 255;
+          return [Math.min(255, base.r * k + 12), Math.min(255, base.g * k + 12), Math.min(255, base.b * k + 12)];
+        });
+      },
+      { pixel: true },
+    );
+  },
+
+  /** Banded + dithered radial glow (for additive sprites). */
   glow() {
-    return canvasTexture('glow', 128, 128, (ctx, s) => {
-      const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-      g.addColorStop(0.6, 'rgba(255,255,255,0.12)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, s, s);
+    return canvasTexture(
+      'glow',
+      32,
+      32,
+      (ctx, s) => {
+        paint(ctx, s, s, (x, y) => {
+          const d = Math.hypot(x + 0.5 - s / 2, y + 0.5 - s / 2) / (s / 2);
+          if (d >= 1) return null;
+          const a = (1 - d) ** 1.6;
+          const level = Math.floor(a * 4 + BAYER4[(y % 4) * 4 + (x % 4)] / 16) / 4;
+          return level > 0 ? [255, 255, 255, Math.round(level * 255)] : null;
+        });
+      },
+      { pixel: true },
+    );
+  },
+
+  /** 12x12 pixel-art coin badges. kind: 'mult' (×) | 'time' (clock) */
+  pixelBadge(kind) {
+    const pal =
+      kind === 'mult'
+        ? { f: [255, 207, 51], '#': [122, 74, 0], X: [255, 255, 255] }
+        : { f: [94, 220, 255], '#': [16, 70, 140], X: [255, 255, 255] };
+    const art = BADGE_ART[kind];
+    return canvasTexture(`pixelBadge:${kind}`, 12, 12, (ctx) => paint(ctx, 12, 12, (x, y) => pal[art[y][x]] || null), {
+      pixel: true,
     });
   },
 
   star4() {
-    return canvasTexture('star4', 256, 256, (ctx, s) => {
+    return canvasTexture('star4', 32, 32, (ctx, s) => {
       const c = s / 2;
       const g = ctx.createRadialGradient(c, c, 0, c, c, c);
       g.addColorStop(0, 'rgba(255,255,255,1)');
@@ -57,47 +163,22 @@ export const Tex = {
       }
       ctx.closePath();
       ctx.fill();
-    });
+    }, { pixel: true });
   },
 
   rainbowRing() {
-    return canvasTexture('rainbowRing', 256, 256, (ctx, s) => {
+    return canvasTexture('rainbowRing', 32, 32, (ctx, s) => {
       const c = s / 2;
       const g = ctx.createConicGradient(0, c, c);
       ['#ff4d6d', '#ffb33b', '#fff04d', '#4dff88', '#4dc3ff', '#9b6bff', '#ff4dd2', '#ff4d6d'].forEach((col, i, a) =>
         g.addColorStop(i / (a.length - 1), col),
       );
       ctx.strokeStyle = g;
-      ctx.lineWidth = s * 0.07;
-      ctx.shadowColor = 'white';
-      ctx.shadowBlur = 12;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(c, c, c * 0.8, 0, Math.PI * 2);
       ctx.stroke();
-    });
-  },
-
-  badge(key, text, from, to) {
-    return canvasTexture(`badge:${key}`, 128, 128, (ctx, s) => {
-      const c = s / 2;
-      const g = ctx.createLinearGradient(0, 0, 0, s);
-      g.addColorStop(0, from);
-      g.addColorStop(1, to);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(c, c, c - 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `900 ${text.length > 1 ? 54 : 78}px "Black Han Sans", system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(0,0,0,0.45)';
-      ctx.shadowBlur = 6;
-      ctx.fillText(text, c, c + 4);
-    });
+    }, { pixel: true });
   },
 
   cross() {

@@ -7,8 +7,25 @@ const W = BOARD_WORLD.right - BOARD_WORLD.left;
 const H = BOARD_WORLD.top - BOARD_WORLD.bottom;
 export const BOARD_ASPECT = W / H;
 
-/** Where the board goes on screen and where the battle stage should center its action. */
-export function computeLayout(width, height) {
+// Target size of one board cell in rendered (virtual) pixels – the "resolution" of the retro look.
+export const CELL_PIXELS = 18;
+
+/**
+ * Where the board goes on screen and where the battle stage should center its action.
+ * Everything is snapped to whole virtual pixels (`px` CSS px each) so the pixelated
+ * upscale stays crisp and the DOM HUD lines up with the canvas exactly.
+ */
+export function computeLayout(viewW, viewH) {
+  const raw = rawLayout(viewW, viewH);
+  const px = Math.max(2, Math.round(raw.board.h / (BOARD_WORLD.top - BOARD_WORLD.bottom) / CELL_PIXELS));
+  const snap = (v) => Math.round(v / px) * px;
+  const width = Math.ceil(viewW / px) * px;
+  const height = Math.ceil(viewH / px) * px;
+  const board = { x: snap(raw.board.x), y: snap(raw.board.y), w: snap(raw.board.w), h: snap(raw.board.h) };
+  return { ...raw, width, height, px, board, unit: board.h / H };
+}
+
+function rawLayout(width, height) {
   const landscape = width / height > 1.05;
   let bw;
   let bh;

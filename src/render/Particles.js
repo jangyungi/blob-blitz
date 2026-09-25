@@ -13,19 +13,16 @@ const vertexShader = /* glsl */ `
     vAlpha = aAlpha;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = aSize * uScale * mix(1.0, 1.0 / max(0.001, -mv.z), uPerspective);
+    gl_PointSize = max(1.0, floor(aSize * uScale * mix(1.0, 1.0 / max(0.001, -mv.z), uPerspective) + 0.5));
   }
 `;
 
+// Hard-edged square "pixels" – retro, and cheaper than soft sprites.
 const fragmentShader = /* glsl */ `
   varying vec3 vColor;
   varying float vAlpha;
   void main() {
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.0, d);
-    a *= a;
-    gl_FragColor = vec4(vColor * (1.0 + a), a * vAlpha);
-    #include <tonemapping_fragment>
+    gl_FragColor = vec4(vColor, vAlpha);
     #include <colorspace_fragment>
   }
 `;
@@ -38,6 +35,7 @@ export class Particles {
   constructor(max = 2000, { perspective = false } = {}) {
     this.max = max;
     this.cursor = 0;
+    this.alive = 0; // upper bound of live particles; lets idle frames skip all work
     this.pos = new Float32Array(max * 3);
     this.col = new Float32Array(max * 3);
     this.size = new Float32Array(max);
@@ -66,6 +64,7 @@ export class Particles {
     this.points = new THREE.Points(g, this.material);
     this.points.frustumCulled = false;
     this.points.renderOrder = 10;
+    this.points.visible = false;
   }
 
   setScale(v) {
@@ -112,9 +111,14 @@ export class Particles {
       this.grav[i] = gravity;
       this.drag[i] = drag;
     }
+    this.alive = Math.min(this.max, this.alive + count);
+    this.points.visible = true;
+    this.geometry.attributes.aColor.needsUpdate = true; // colors only change on emit
   }
 
   update(dt) {
+    if (this.alive === 0) return;
+    let live = 0;
     for (let i = 0; i < this.max; i++) {
       if (this.life[i] <= 0) {
         if (this.alpha[i] !== 0) {
@@ -123,6 +127,7 @@ export class Particles {
         }
         continue;
       }
+      live++;
       this.life[i] -= dt;
       const k = Math.max(0, this.life[i] / this.maxLife[i]);
       const damp = Math.exp(-this.drag[i] * dt);
@@ -135,14 +140,18 @@ export class Particles {
       this.alpha[i] = k;
       this.size[i] = this.size0[i] * (0.4 + 0.6 * k);
     }
+    this.alive = live;
+    if (live === 0) this.points.visible = false; // no draw call while idle
     const a = this.geometry.attributes;
     a.position.needsUpdate = true;
-    a.aColor.needsUpdate = true;
     a.aSize.needsUpdate = true;
     a.aAlpha.needsUpdate = true;
   }
 
   clear() {
     this.life.fill(0);
+    this.alpha.fill(0);
+    this.alive = 0;
+    this.points.visible = false;
   }
 }

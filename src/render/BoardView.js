@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG, BLOB_COLORS, GARBAGE_COLOR } from '../config.js';
 import { Kind, Tag } from '../core/Board.js';
 import { BOARD_WORLD, worldToScreen } from './Layout.js';
@@ -14,6 +15,26 @@ const QUEUE_SLOTS = [
 const FRAME = { normal: new THREE.Color(0x6f7dff), blazing: new THREE.Color(0xff7a1a), danger: new THREE.Color(0xff2a4a) };
 
 const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
+
+function buildEyes() {
+  const part = (sx, sy, sz, x, y, z, hex) => {
+    const g = new THREE.SphereGeometry(1, 8, 6);
+    g.scale(sx, sy, sz);
+    g.translate(x, y, z);
+    const c = new THREE.Color(hex);
+    const n = g.attributes.position.count;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) colors.set([c.r, c.g, c.b], i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return g;
+  };
+  const parts = [];
+  for (const sx of [-1, 1]) {
+    parts.push(part(0.105, 0.14, 0.07, sx * 0.15, 0.07, 0.39, 0xffffff));
+    parts.push(part(0.055, 0.08, 0.04, sx * 0.162, 0.05, 0.445, 0x0a0a16));
+  }
+  return mergeGeometries(parts);
+}
 const colorHex = (c) => (c >= 0 ? BLOB_COLORS[c].hex : GARBAGE_COLOR.hex);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,17 +76,7 @@ class BlobMesh {
   }
 
   addEyes() {
-    const { geo, mats } = this.view;
-    this.eyes = new THREE.Group();
-    for (const sx of [-1, 1]) {
-      const white = new THREE.Mesh(geo.eye, mats.eyeWhite);
-      white.scale.set(0.105, 0.14, 0.07);
-      white.position.set(sx * 0.15, 0.07, 0.39);
-      const pupil = new THREE.Mesh(geo.eye, mats.pupil);
-      pupil.scale.set(0.055, 0.08, 0.04);
-      pupil.position.set(sx * 0.15 + sx * 0.012, 0.05, 0.445);
-      this.eyes.add(white, pupil);
-    }
+    this.eyes = new THREE.Mesh(this.view.geo.eyes, this.view.mats.eyes);
     this.inner.add(this.eyes);
   }
 
@@ -139,7 +150,7 @@ class BlobMesh {
 
   addBadge(map) {
     const s = new THREE.Sprite(this.own(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false })));
-    s.scale.setScalar(0.52);
+    s.scale.setScalar(0.62);
     s.position.set(0.24, -0.22, 0.7);
     this.badge = s;
     this.group.add(s);
@@ -193,8 +204,7 @@ class BlobMesh {
     }
     if (this.halo) {
       this.halo.material.rotation -= dt * 2.5;
-      this.prismMat.color.setHSL((t * 0.35) % 1, 0.85, 0.62);
-      this.prismMat.emissive.copy(this.prismMat.color);
+      this.prismMat.color.setHSL((t * 0.35) % 1, 0.9, 0.65);
     }
     if (this.badge) {
       this.badge.position.y = -0.22 + 0.03 * Math.sin(t * 4 + this.phase);
@@ -225,11 +235,11 @@ export class BoardView {
     this.renderer = renderer;
     this.bus = bus;
     this.scene = new THREE.Scene();
-    this.scene.environment = renderer.envMap;
-    this.scene.environmentIntensity = 0.75;
     const { left, right, top, bottom } = BOARD_WORLD;
-    this.camera = new THREE.OrthographicCamera(left, right, top, bottom, -20, 20);
-    this.camera.position.z = 10;
+    // Far away so the matcap shader's per-pixel view direction is effectively parallel
+    // (it assumes perspective; up close, blobs near the edges get skewed shading).
+    this.camera = new THREE.OrthographicCamera(left, right, top, bottom, 980, 1020);
+    this.camera.position.z = 1000;
     this.root = new THREE.Group();
     this.scene.add(this.root);
 
@@ -247,80 +257,54 @@ export class BoardView {
     this.visAngle = 0;
     this.lockLandPending = false;
 
+    this.seen = new Set();
     this.initResources();
-    this.initLights();
     this.initWell();
     this.initGhost();
     this.initBridges();
-    this.particles = new Particles(2600);
+    this.particles = new Particles(900);
     this.root.add(this.particles.points);
   }
 
   // ─── setup ────────────────────────────────────────────────────────────────
 
   initResources() {
+    // Low-poly on purpose: a blob is only ~18 rendered pixels wide.
     this.geo = {
-      body: new THREE.SphereGeometry(R, 40, 28),
-      eye: new THREE.SphereGeometry(1, 16, 12),
-      bridge: new THREE.SphereGeometry(1, 20, 14),
-      ring: new THREE.TorusGeometry(0.52, 0.04, 10, 48),
-      ghost: new THREE.RingGeometry(0.14, 0.25, 28),
-      shock: new THREE.RingGeometry(0.82, 1, 48),
+      body: new THREE.SphereGeometry(R, 16, 12),
+      eyes: buildEyes(), // both eyes merged into one vertex-colored mesh = 1 draw call
+      bridge: new THREE.SphereGeometry(1, 10, 8),
+      ring: new THREE.TorusGeometry(0.52, 0.05, 4, 24),
+      ghost: new THREE.RingGeometry(0.14, 0.26, 12),
+      shock: new THREE.RingGeometry(0.8, 1, 24),
       beam: new THREE.PlaneGeometry(1, 1),
     };
-    const blobMat = (hex, extra = {}) =>
-      new THREE.MeshPhysicalMaterial({
-        color: hex,
-        roughness: 0.26,
-        metalness: 0,
-        clearcoat: 1,
-        clearcoatRoughness: 0.1,
-        emissive: hex,
-        emissiveIntensity: 0.14,
-        ...extra,
-      });
+    // Matcap = one texture lookup per pixel, no lights. Special blobs get their own
+    // material instances so they can pulse without touching normal blobs.
+    const blobMat = (hex) => new THREE.MeshMatcapMaterial({ matcap: Tex.matcap(hex) });
     this.mats = {
       color: BLOB_COLORS.map((c) => blobMat(c.hex)),
-      special: BLOB_COLORS.map((c) => blobMat(c.hex, { emissiveIntensity: 0.35 })),
-      garbage: blobMat(GARBAGE_COLOR.hex, { roughness: 0.5, clearcoat: 0.4, emissiveIntensity: 0.05 }),
+      special: BLOB_COLORS.map((c) => blobMat(c.hex)),
+      garbage: blobMat(GARBAGE_COLOR.hex),
       flash: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      crush: new THREE.MeshStandardMaterial({ color: 0x4a4f5e, roughness: 0.85 }),
-      eyeWhite: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 }),
-      pupil: new THREE.MeshStandardMaterial({ color: 0x0a0a16, roughness: 0.15 }),
+      crush: blobMat(0x4a4f5e),
+      eyes: new THREE.MeshBasicMaterial({ vertexColors: true }),
     };
     this.tex = {
-      mult: Tex.badge('mult', '×', '#ffe066', '#e08a00'),
-      time: Tex.badge('time', '+5', '#6ff3ff', '#1b86d6'),
+      mult: Tex.pixelBadge('mult'),
+      time: Tex.pixelBadge('time'),
     };
   }
 
   materialFor(blob) {
     if (blob.kind === Kind.GARBAGE) return this.mats.garbage;
     if (blob.kind === Kind.PRISM) {
-      const m = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        roughness: 0.08,
-        clearcoat: 1,
-        iridescence: 1,
-        iridescenceIOR: 1.9,
-        emissive: 0xffffff,
-        emissiveIntensity: 0.35,
-      });
+      const m = new THREE.MeshMatcapMaterial({ matcap: Tex.matcap(0xffffff) });
       m.userData.owned = true;
       return m;
     }
     if (blob.kind === Kind.BOMB || blob.kind === Kind.STAR) return this.mats.special[blob.color];
     return this.mats.color[blob.color];
-  }
-
-  initLights() {
-    this.scene.add(new THREE.HemisphereLight(0xc8d6ff, 0x2a1638, 0.9));
-    const key = new THREE.DirectionalLight(0xffffff, 1.9);
-    key.position.set(-3, 5, 8);
-    this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x9fb4ff, 0.7);
-    rim.position.set(6, -1, 3);
-    this.scene.add(rim);
   }
 
   initWell() {
@@ -389,7 +373,7 @@ export class BoardView {
 
   initBridges() {
     this.bridges = [];
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 60; i++) {
       const m = new THREE.Mesh(this.geo.bridge, this.mats.color[0]);
       m.visible = false;
       this.root.add(m);
@@ -399,7 +383,7 @@ export class BoardView {
 
   setLayout(layout) {
     this.layout = layout;
-    this.particles.setScale(layout.unit * this.renderer.pixelRatio);
+    this.particles.setScale(layout.unit / layout.px);
   }
 
   get rect() {
@@ -605,8 +589,7 @@ export class BoardView {
 
   setBlazing(on) {
     this.blazing = on;
-    const e = on ? 0.4 : 0.14;
-    this.mats.color.forEach((m) => (m.emissiveIntensity = e));
+    this.mats.color.forEach((m) => m.color.setScalar(on ? 1.3 : 1));
   }
 
   // ─── per-frame ────────────────────────────────────────────────────────────
@@ -623,7 +606,10 @@ export class BoardView {
   update(dt, game) {
     this.time += dt;
     const t = this.time;
-    const seen = new Set();
+    const seen = this.seen;
+    seen.clear();
+    const pulse = 1 + 0.35 * (0.5 + 0.5 * Math.sin(t * 7));
+    this.mats.special.forEach((m) => m.color.setScalar(pulse));
 
     // NEXT queue
     game.queue.slice(0, QUEUE_SLOTS.length).forEach((piece, i) => {

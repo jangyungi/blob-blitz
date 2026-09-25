@@ -48,7 +48,7 @@ export const CONFIG = {
     prismChainAt: 4, // chain length that grants a PRISM piece
     bombRadius: 2, // manhattan radius
     multChance: 0.08,
-    timeChance: 0.07,
+    timeChance: 0.045,
     timeBonus: 5,
     maxMult: 8,
   },
@@ -63,6 +63,19 @@ export const CONFIG = {
   overflow: {
     timePenalty: 3,
     crushFromRow: 6, // everything at or above this row is crushed
+  },
+
+  time: {
+    chainStep: 0.5, // seconds per chain step beyond the first: 2-chain +0.5, 3-chain +1.0, 4-chain +1.5...
+    gaugeFirst: 3000, // points needed to fill the time gauge the first time
+    gaugeGrowth: 1.6, // each refill needs this much more
+    gaugeBonus: 3, // seconds granted per full gauge
+  },
+
+  battle: {
+    // 'auto': hero ESCAPES if LAST HURRAH had specials to fire, otherwise gets K.O.'d
+    // 'escape' / 'death': always that ending. Also overridable with ?ending=death in the URL.
+    ending: 'auto',
   },
 };
 

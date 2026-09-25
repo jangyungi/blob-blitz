@@ -16,6 +16,7 @@ const KEYMAP = {
   Escape: 'pause',
   KeyP: 'pause',
   KeyM: 'mute',
+  KeyC: 'crt',
 };
 
 /**

@@ -76,7 +76,10 @@ export class Game {
     this.lockTimer = 0;
     this.lockResets = 0;
     this.das = { dir: 0, timer: 0, charged: false };
-    this.stats = { maxChain: 0, popped: 0, specials: 0, prisms: 0, maxMult: 1, bestStep: 0 };
+    this.gauge = 0;
+    this.gaugeNext = CONFIG.time.gaugeFirst;
+    this.ending = null;
+    this.stats = { maxChain: 0, popped: 0, specials: 0, prisms: 0, maxMult: 1, bestStep: 0, timeGained: 0 };
     this.fillQueue();
     this.view.reset(this);
   }
@@ -438,10 +441,8 @@ export class Game {
         this.stats.maxMult = Math.max(this.stats.maxMult, this.mult);
         if (this.mult !== before) this.bus.emit('mult', { mult: this.mult, up: true });
       }
-      if (timeBonus && !this.timeUp) {
-        this.timeLeft += timeBonus;
-        this.bus.emit('timeBonus', { seconds: timeBonus });
-      }
+      if (timeBonus) this.addTime(timeBonus, 'blob');
+      if (!hurrah && step.type === 'pop' && chain >= 2) this.addTime(CONFIG.time.chainStep * (chain - 1), 'chain');
       if (!hurrah && step.type === 'pop') {
         const big = step.groups.some((g) => g.cells.length >= CONFIG.specials.prismGroupAt);
         if (big || chain >= CONFIG.specials.prismChainAt) this.grantPrism();
@@ -523,38 +524,62 @@ export class Game {
     await this.playStep(computeCrushStep(this.board, O.crushFromRow), 0);
   }
 
+  countSpecials() {
+    let n = 0;
+    this.board.forEach((p, x, y) => {
+      if (isExplosive(p) && y < this.board.visible) n++;
+    });
+    return n;
+  }
+
   async lastHurrah() {
     const run = this.run;
     const alive = () => run === this.run;
     this.phase = 'hurrah';
     this.state = State.HURRAH;
     this.bus.emit('state', this.state);
-    this.bus.emit('hurrah');
 
-    await this.delay(1.1);
+    await this.delay(0.9);
     if (!alive()) return;
 
-    for (let round = 0; round < 40; round++) {
-      const specials = [];
-      this.board.forEach((p, x, y) => {
-        if (isExplosive(p) && y < this.board.visible) specials.push([x, y]);
-      });
-      if (!specials.length) break;
-      specials.sort((a, b) => b[1] - a[1]);
-      const [x, y] = specials[0];
-      await this.playStep(computeDetonateStep(this.board, x, y), 0, { hurrah: true });
+    const hurrah = this.countSpecials() > 0;
+    let ending = CONFIG.battle.ending;
+    if (ending !== 'escape' && ending !== 'death') ending = hurrah ? 'escape' : 'death';
+    this.ending = ending;
+
+    if (hurrah) {
+      this.bus.emit('hurrah');
+      await this.delay(1.0);
       if (!alive()) return;
-      for (let chain = 1; ; chain++) {
-        const step = computePopStep(this.board);
-        if (!step) break;
-        await this.playStep(step, chain, { hurrah: true });
+      for (let round = 0; round < 40; round++) {
+        const specials = [];
+        this.board.forEach((p, x, y) => {
+          if (isExplosive(p) && y < this.board.visible) specials.push([x, y]);
+        });
+        if (!specials.length) break;
+        specials.sort((a, b) => b[1] - a[1]);
+        const [x, y] = specials[0];
+        await this.playStep(computeDetonateStep(this.board, x, y), 0, { hurrah: true });
+        if (!alive()) return;
+        for (let chain = 1; ; chain++) {
+          const step = computePopStep(this.board);
+          if (!step) break;
+          await this.playStep(step, chain, { hurrah: true });
+          if (!alive()) return;
+        }
+        await this.delay(0.08);
         if (!alive()) return;
       }
-      await this.delay(0.08);
+      await this.delay(0.3);
       if (!alive()) return;
     }
 
-    await this.delay(0.7);
+    // Battle outro (hero escapes / gets K.O.'d). `outro` is injected by main.js and
+    // resolves when the stage animation is done, so the puzzle stays renderer-agnostic.
+    this.bus.emit('ending', { ending, hurrah });
+    if (this.outro) await this.outro(ending);
+    if (!alive()) return;
+    await this.delay(0.4);
     if (!alive()) return;
     this.finish();
   }
@@ -568,10 +593,32 @@ export class Game {
       saveBest(this.best);
     }
     this.bus.emit('state', this.state);
-    this.bus.emit('results', { score: this.score, best: this.best, isBest, stats: { ...this.stats } });
+    this.bus.emit('results', { score: this.score, best: this.best, isBest, ending: this.ending, stats: { ...this.stats } });
   }
 
   addScore(n) {
-    if (n > 0) this.score += Math.round(n);
+    if (n <= 0) return;
+    n = Math.round(n);
+    this.score += n;
+    // Score also charges the time gauge; every fill buys extra seconds.
+    if (this.state !== State.PLAY || this.timeUp) return;
+    this.gauge += n;
+    while (this.gauge >= this.gaugeNext) {
+      this.gauge -= this.gaugeNext;
+      this.gaugeNext = Math.round(this.gaugeNext * CONFIG.time.gaugeGrowth);
+      this.addTime(CONFIG.time.gaugeBonus, 'gauge');
+    }
+  }
+
+  addTime(seconds, source) {
+    if (seconds <= 0 || this.timeUp) return;
+    this.timeLeft += seconds;
+    this.stats.timeGained += seconds;
+    this.bus.emit('timeBonus', { seconds, source });
+  }
+
+  /** 0..1 progress of the score→time gauge, for the HUD. */
+  gaugeProgress() {
+    return Math.min(1, this.gauge / this.gaugeNext);
   }
 }
