@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#05060f" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="60초 연쇄 러시 퍼즐 — 같은 색 블롭 4개를 이어 터뜨려라" />
+    <title>Blob Blitz</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+
+    <div id="hud">
+      <div id="score-band">
+        <div class="score-block">
+          <span class="label">SCORE</span>
+          <span id="score">0</span>
+        </div>
+        <div class="best-block">
+          <span class="label">BEST</span>
+          <span id="best">0</span>
+        </div>
+      </div>
+      <div id="timer">
+        <div id="timer-fill"></div>
+        <span id="timer-text">60</span>
+      </div>
+      <div id="next-label">NEXT</div>
+      <div id="mult" data-level="1">
+        <span class="label">MULTI</span>
+        <span class="value">×<span id="mult-value">1</span></span>
+      </div>
+      <div id="speed">
+        <span class="label">SPEED</span>
+        <div class="segs"><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i></div>
+        <div class="drain"><div id="speed-drain"></div></div>
+      </div>
+      <div id="callouts"></div>
+      <div id="floaters"></div>
+      <div id="buttons">
+        <button id="btn-pause" title="일시정지 (P)" aria-label="일시정지">❚❚</button>
+        <button id="btn-mute" title="소리 (M)" aria-label="소리 켜기/끄기">♪</button>
+      </div>
+    </div>
+
+    <div id="title" class="overlay">
+      <div class="card">
+        <h1><span>BLOB</span> <span class="accent">BLITZ</span></h1>
+        <p class="tagline">60초 연쇄 러시 · 같은 색 4개를 이어 터뜨려라</p>
+        <button class="primary" data-action="start">시작하기 <kbd>Enter</kbd></button>
+        <div class="rules">
+          <div><b class="c-bomb">●</b> 5개 동시 팡 → <b>폭탄 블롭</b> (주변 폭발)</div>
+          <div><b class="c-star">✦</b> 6개 이상 → <b>스타 블롭</b> (가로·세로 한 줄 삭제)</div>
+          <div><b class="c-prism">◆</b> 4연쇄 이상 / 8개 이상 → <b>프리즘</b> (떨어진 곳 아래 색 전부 삭제)</div>
+          <div><b class="c-mult">×</b> 배수 블롭 +1 &nbsp; <b class="c-time">+5</b> 시간 블롭 +5초</div>
+          <div><b class="c-speed">»</b> 3초 안에 연속으로 터뜨리면 SPEED ↑ → <b>BLAZING</b> 점수 2배</div>
+          <div><b class="c-hurrah">★</b> 시간 종료 시 <b>LAST HURRAH</b> — 남은 특수 블롭 전부 폭발</div>
+        </div>
+        <div class="controls">
+          <span><kbd>←</kbd><kbd>→</kbd> 이동</span>
+          <span><kbd>↓</kbd> 소프트드롭</span>
+          <span><kbd>Space</kbd> 하드드롭</span>
+          <span><kbd>↑</kbd>/<kbd>X</kbd> 회전 · <kbd>Z</kbd> 역회전</span>
+          <span class="touch">터치: 좌우 드래그 이동 · 탭 회전 · 아래로 튕기기 하드드롭</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="results" class="overlay hidden">
+      <div class="card">
+        <h2>TIME UP!</h2>
+        <div class="res-score" id="res-score">0</div>
+        <div id="res-newbest" class="newbest hidden">NEW BEST!</div>
+        <div class="stats">
+          <div><span>최대 연쇄</span><b id="res-chain">0</b></div>
+          <div><span>터뜨린 블롭</span><b id="res-popped">0</b></div>
+          <div><span>특수 블롭</span><b id="res-specials">0</b></div>
+          <div><span>최고 배수</span><b id="res-mult">×1</b></div>
+          <div><span>한 방 최고점</span><b id="res-step">0</b></div>
+          <div><span>BEST</span><b id="res-best">0</b></div>
+        </div>
+        <button class="primary" data-action="start">다시하기 <kbd>Enter</kbd></button>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="card small">
+        <h2>PAUSED</h2>
+        <button class="primary" data-action="resume">계속하기 <kbd>P</kbd></button>
+        <button class="ghost" data-action="start">처음부터</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
