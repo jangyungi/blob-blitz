@@ -7,22 +7,39 @@ const W = BOARD_WORLD.right - BOARD_WORLD.left;
 const H = BOARD_WORLD.top - BOARD_WORLD.bottom;
 export const BOARD_ASPECT = W / H;
 
-// Target size of one board cell in rendered (virtual) pixels – the "resolution" of the retro look.
-export const CELL_PIXELS = 18;
+// Target size of one board cell in rendered pixels – the "resolution" of the retro look.
+// Bigger = sharper (and more GPU work); smaller = chunkier.
+export const CELL_PIXELS = 24;
 
 /**
  * Where the board goes on screen and where the battle stage should center its action.
- * Everything is snapped to whole virtual pixels (`px` CSS px each) so the pixelated
- * upscale stays crisp and the DOM HUD lines up with the canvas exactly.
+ *
+ * One rendered pixel is a whole number of *device* pixels (`devPx`), so the pixelated upscale
+ * is perfectly even on any screen density. In CSS terms that is `px = devPx / dpr` (may be
+ * fractional). Everything is snapped to whole rendered pixels: `virtual` holds the integer
+ * rendered-pixel sizes for the renderer, the rest is in CSS px for the DOM HUD.
  */
-export function computeLayout(viewW, viewH) {
+export function computeLayout(viewW, viewH, dpr = 1) {
+  // hidden / collapsed containers report 0x0; keep sizes positive so WebGL never sees negatives
+  viewW = Math.max(viewW, 120);
+  viewH = Math.max(viewH, 120);
   const raw = rawLayout(viewW, viewH);
-  const px = Math.max(2, Math.round(raw.board.h / (BOARD_WORLD.top - BOARD_WORLD.bottom) / CELL_PIXELS));
-  const snap = (v) => Math.round(v / px) * px;
-  const width = Math.ceil(viewW / px) * px;
-  const height = Math.ceil(viewH / px) * px;
-  const board = { x: snap(raw.board.x), y: snap(raw.board.y), w: snap(raw.board.w), h: snap(raw.board.h) };
-  return { ...raw, width, height, px, board, unit: board.h / H };
+  const devPx = Math.max(1, Math.round((raw.unit * dpr) / CELL_PIXELS));
+  const px = devPx / dpr;
+  const toV = (v) => Math.round(v / px);
+  const vw = Math.ceil(viewW / px - 1e-6);
+  const vh = Math.ceil(viewH / px - 1e-6);
+  const vb = { x: toV(raw.board.x), y: toV(raw.board.y), w: toV(raw.board.w), h: toV(raw.board.h) };
+  const board = { x: vb.x * px, y: vb.y * px, w: vb.w * px, h: vb.h * px };
+  return {
+    ...raw,
+    width: vw * px,
+    height: vh * px,
+    px,
+    board,
+    unit: board.h / H,
+    virtual: { w: vw, h: vh, board: vb },
+  };
 }
 
 function rawLayout(width, height) {

@@ -6,7 +6,7 @@ import * as THREE from 'three';
  *   layer 1: BoardView   (scissored to the board rect, orthographic)
  * Each layer clears depth only, so later layers draw over earlier ones.
  *
- * Retro + cheap: the canvas backing store is 1/pixelSize of its CSS size and CSS upscales it
+ * Retro + cheap: the canvas backing store is a whole-device-pixel fraction of the screen and CSS upscales it
  * with `image-rendering: pixelated`. No MSAA, no shadow maps, no environment maps, so even a
  * low-end phone only shades a few hundred thousand pixels per frame.
  */
@@ -24,38 +24,36 @@ export class Renderer {
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.toneMapping = THREE.NoToneMapping;
     this.gl.setClearColor(0x05060f, 1);
-    this.width = 1; // CSS px (a multiple of pixelSize)
+    this.width = 1; // CSS px
     this.height = 1;
-    this.pixelSize = 3; // CSS px per rendered pixel
+    this.vw = 1; // rendered px
+    this.vh = 1;
   }
 
-  /** width/height in CSS px, already snapped to multiples of pixelSize. */
-  setSize(width, height, pixelSize) {
-    this.width = width;
-    this.height = height;
-    this.pixelSize = pixelSize;
-    this.gl.setSize(width / pixelSize, height / pixelSize, false);
-    this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
+  /** Uses layout.virtual (integer rendered pixels) for the backing store, CSS px for display. */
+  setSize(layout) {
+    const { virtual, px } = layout;
+    this.width = virtual.w * px; // CSS px
+    this.height = virtual.h * px;
+    this.vw = virtual.w;
+    this.vh = virtual.h;
+    this.gl.setSize(virtual.w, virtual.h, false);
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
   }
 
-  /** layers: [{ scene, camera, rect? }], rect in CSS px (snapped) with a top-left origin. */
+  /** layers: [{ scene, camera, rect? }], rect in rendered pixels with a top-left origin. */
   render(layers) {
     const gl = this.gl;
-    const px = this.pixelSize;
-    const vw = this.width / px;
-    const vh = this.height / px;
+    const { vw, vh } = this;
     gl.setScissorTest(false);
     gl.setViewport(0, 0, vw, vh);
     gl.clear();
     for (const { scene, camera, rect } of layers) {
       if (rect) {
-        const x = rect.x / px;
-        const w = rect.w / px;
-        const h = rect.h / px;
-        const y = vh - rect.y / px - h;
-        gl.setViewport(x, y, w, h);
-        gl.setScissor(x, y, w, h);
+        const y = vh - rect.y - rect.h;
+        gl.setViewport(rect.x, y, rect.w, rect.h);
+        gl.setScissor(rect.x, y, rect.w, rect.h);
         gl.setScissorTest(true);
       } else {
         gl.setViewport(0, 0, vw, vh);

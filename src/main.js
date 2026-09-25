@@ -31,8 +31,8 @@ let paused = false;
 // ─── layout ───────────────────────────────────────────────────────────────
 
 function resize() {
-  layout = computeLayout(window.innerWidth, window.innerHeight);
-  renderer.setSize(layout.width, layout.height, layout.px);
+  layout = computeLayout(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
+  renderer.setSize(layout);
   view.setLayout(layout);
   stage.setFocus(layout);
   hud.layout(view);
@@ -257,7 +257,7 @@ function render() {
   needsRender = false;
   renderer.render([
     { scene: stage.scene, camera: stage.camera },
-    { scene: view.scene, camera: view.camera, rect: layout.board },
+    { scene: view.scene, camera: view.camera, rect: layout.virtual.board },
   ]);
 }
 requestAnimationFrame(frame);
