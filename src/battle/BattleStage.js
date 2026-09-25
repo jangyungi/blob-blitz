@@ -99,7 +99,7 @@ export class BattleStage {
     this.scene.add(this.flashLight);
 
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(40, 64),
+      new THREE.CircleGeometry(120, 64),
       new THREE.MeshStandardMaterial({ color: 0x1a1433, roughness: 0.9, metalness: 0.1 }),
     );
     ground.rotation.x = -Math.PI / 2;
@@ -228,7 +228,7 @@ export class BattleStage {
     const freeH = layout.landscape ? h : board.y;
     const fitW = (9.5 * vh) / (2 * tanHalf * Math.max(160, freeW));
     const fitH = (5.5 * vh) / (2 * tanHalf * Math.max(120, freeH));
-    const d = THREE.MathUtils.clamp(Math.max(fitW, fitH, 9.5), 9.5, 32);
+    const d = THREE.MathUtils.clamp(Math.max(fitW, fitH, 9.5), 9.5, 60);
     this.camBase.set(0, 2.2 + d * 0.09, d);
     this.scene.fog.near = d + 2;
     this.scene.fog.far = d + 34;
